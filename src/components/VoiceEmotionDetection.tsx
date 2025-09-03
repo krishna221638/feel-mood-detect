@@ -1,8 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Mic, MicOff, Play, Square } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import EmotionCard from './EmotionCard';
 
 interface EmotionResult {
@@ -14,30 +21,28 @@ interface EmotionResult {
 
 const VoiceEmotionDetection: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [recordingUri, setRecordingUri] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [results, setResults] = useState<EmotionResult[]>([]);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
   
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const { toast } = useToast();
 
-  // Mock emotion analysis function (replace with actual API call)
-  const analyzeVoiceEmotion = async (audioData: Blob): Promise<EmotionResult[]> => {
+  // Mock emotion analysis function
+  const analyzeVoiceEmotion = async (audioUri: string): Promise<EmotionResult[]> => {
     setIsAnalyzing(true);
     
     // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 2500));
     
-    // Mock results - replace with actual API call
+    // Mock results
     const mockResults: EmotionResult[] = [
-      { emotion: 'calm', percentage: 45, emoji: '😌', color: 'hsl(var(--emotion-calm))' },
-      { emotion: 'happy', percentage: 30, emoji: '😊', color: 'hsl(var(--emotion-happy))' },
-      { emotion: 'neutral', percentage: 15, emoji: '😐', color: 'hsl(var(--emotion-neutral))' },
-      { emotion: 'fear', percentage: 10, emoji: '😰', color: 'hsl(var(--emotion-fear))' }
+      { emotion: 'calm', percentage: 45, emoji: '😌', color: '#10B981' },
+      { emotion: 'happy', percentage: 30, emoji: '😊', color: '#FCD34D' },
+      { emotion: 'neutral', percentage: 15, emoji: '😐', color: '#94A3B8' },
+      { emotion: 'fear', percentage: 10, emoji: '😰', color: '#8B5CF6' }
     ];
     
     setIsAnalyzing(false);
@@ -46,28 +51,22 @@ const VoiceEmotionDetection: React.FC = () => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Microphone access is needed to record audio.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
       
-      const chunks: BlobPart[] = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-      
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'audio/wav' });
-        setAudioBlob(blob);
-        setAudioUrl(URL.createObjectURL(blob));
-        
-        // Stop all tracks
-        stream.getTracks().forEach(track => track.stop());
-      };
-      
-      mediaRecorder.start();
+      recordingRef.current = recording;
       setIsRecording(true);
       setRecordingDuration(0);
       
@@ -77,44 +76,55 @@ const VoiceEmotionDetection: React.FC = () => {
       }, 1000);
       
     } catch (error) {
-      toast({
-        title: "Microphone access denied",
-        description: "Please allow microphone access to record audio.",
-        variant: "destructive"
-      });
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
     }
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
+  const stopRecording = async () => {
+    if (!recordingRef.current) return;
+
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      setRecordingUri(uri);
       setIsRecording(false);
       
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+      
+      recordingRef.current = null;
+    } catch (error) {
+      Alert.alert('Error', 'Failed to stop recording.');
+    }
+  };
+
+  const playRecording = async () => {
+    if (!recordingUri) return;
+
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: recordingUri });
+      setSound(sound);
+      await sound.playAsync();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to play recording.');
     }
   };
 
   const analyzeRecording = async () => {
-    if (!audioBlob) return;
+    if (!recordingUri) return;
     
     try {
-      const emotionResults = await analyzeVoiceEmotion(audioBlob);
+      const emotionResults = await analyzeVoiceEmotion(recordingUri);
       setResults(emotionResults);
     } catch (error) {
-      toast({
-        title: "Analysis failed",
-        description: "Failed to analyze the recording. Please try again.",
-        variant: "destructive"
-      });
+      Alert.alert('Error', 'Failed to analyze the recording. Please try again.');
     }
   };
 
   const reset = () => {
-    setAudioBlob(null);
-    setAudioUrl(null);
+    setRecordingUri(null);
     setResults([]);
     setRecordingDuration(0);
     setIsAnalyzing(false);
@@ -122,6 +132,11 @@ const VoiceEmotionDetection: React.FC = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+    }
+    
+    if (sound) {
+      sound.unloadAsync();
+      setSound(null);
     }
   };
 
@@ -132,85 +147,230 @@ const VoiceEmotionDetection: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="gradient-card shadow-soft p-6">
-        <h2 className="text-xl font-semibold mb-4 text-center">Voice Emotion Detection</h2>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Voice Emotion Detection</Text>
         
-        <div className="space-y-6">
-          {/* Recording Section */}
-          <div className="text-center space-y-4">
-            {isRecording ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-center">
-                  <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center animate-pulse-soft">
-                    <Mic className="w-8 h-8 text-white" />
-                  </div>
-                </div>
-                <div className="text-lg font-semibold">
-                  Recording... {formatTime(recordingDuration)}
-                </div>
-                <Button 
-                  variant="destructive" 
-                  size="lg" 
-                  onClick={stopRecording}
+        <View style={styles.contentContainer}>
+          {isRecording ? (
+            <View style={styles.recordingContainer}>
+              <View style={styles.recordingIndicator}>
+                <LinearGradient
+                  colors={['#8B5CF6', '#A855F7']}
+                  style={styles.recordingCircle}
                 >
-                  <Square className="w-4 h-4 mr-2" />
-                  Stop Recording
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {!audioBlob ? (
-                  <Button 
-                    variant="emotion" 
-                    size="xl" 
-                    onClick={startRecording}
-                    className="w-full max-w-xs"
+                  <Ionicons name="mic" size={32} color="white" />
+                </LinearGradient>
+              </View>
+              <Text style={styles.recordingText}>
+                Recording... {formatTime(recordingDuration)}
+              </Text>
+              <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
+                <View style={styles.stopButtonInner}>
+                  <Ionicons name="stop" size={20} color="white" />
+                  <Text style={styles.stopButtonText}>Stop Recording</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.actionContainer}>
+              {!recordingUri ? (
+                <TouchableOpacity style={styles.startButton} onPress={startRecording}>
+                  <LinearGradient
+                    colors={['#8B5CF6', '#A855F7']}
+                    style={styles.startButtonGradient}
                   >
-                    <Mic className="w-6 h-6 mr-2" />
-                    Start Recording
-                  </Button>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="text-center">
-                      <p className="text-muted-foreground mb-2">
-                        Recording completed ({formatTime(recordingDuration)})
-                      </p>
-                      
-                      {audioUrl && (
-                        <div className="flex items-center justify-center gap-4 mb-4">
-                          <audio ref={audioRef} src={audioUrl} controls className="max-w-xs" />
-                        </div>
-                      )}
-                      
-                      <div className="flex gap-3 justify-center">
-                        <Button 
-                          variant="emotion" 
-                          onClick={analyzeRecording}
-                          disabled={isAnalyzing}
-                        >
+                    <Ionicons name="mic" size={24} color="white" />
+                    <Text style={styles.startButtonText}>Start Recording</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.recordingCompleteContainer}>
+                  <Text style={styles.completedText}>
+                    Recording completed ({formatTime(recordingDuration)})
+                  </Text>
+                  
+                  <TouchableOpacity style={styles.playButton} onPress={playRecording}>
+                    <Ionicons name="play" size={20} color="#8B5CF6" />
+                    <Text style={styles.playButtonText}>Play Recording</Text>
+                  </TouchableOpacity>
+                  
+                  <View style={styles.actionButtonsContainer}>
+                    <TouchableOpacity 
+                      style={styles.analyzeButton} 
+                      onPress={analyzeRecording}
+                      disabled={isAnalyzing}
+                    >
+                      <LinearGradient
+                        colors={['#8B5CF6', '#A855F7']}
+                        style={styles.analyzeButtonGradient}
+                      >
+                        <Text style={styles.analyzeButtonText}>
                           {isAnalyzing ? 'Analyzing...' : 'Analyze Emotion'}
-                        </Button>
-                        <Button variant="outline" onClick={reset}>
-                          New Recording
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.newRecordingButton} onPress={reset}>
+                      <Text style={styles.newRecordingButtonText}>New Recording</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
 
       <EmotionCard 
         results={results} 
         title="Voice Emotion Analysis" 
         isLoading={isAnalyzing}
       />
-    </div>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 24,
+    margin: 20,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 24,
+    color: '#1E293B',
+  },
+  contentContainer: {
+    alignItems: 'center',
+  },
+  recordingContainer: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  recordingIndicator: {
+    marginBottom: 8,
+  },
+  recordingCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recordingText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E293B',
+  },
+  stopButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  stopButtonInner: {
+    backgroundColor: '#EF4444',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  stopButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  actionContainer: {
+    width: '100%',
+    gap: 16,
+  },
+  startButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  startButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  startButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  recordingCompleteContainer: {
+    alignItems: 'center',
+    gap: 16,
+    width: '100%',
+  },
+  completedText: {
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  playButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  playButtonText: {
+    color: '#8B5CF6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  analyzeButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  analyzeButtonGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  analyzeButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  newRecordingButton: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  newRecordingButtonText: {
+    color: '#8B5CF6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 export default VoiceEmotionDetection;

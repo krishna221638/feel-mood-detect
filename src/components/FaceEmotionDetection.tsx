@@ -1,8 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Camera, Upload, RotateCcw } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { Camera, CameraType } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import EmotionCard from './EmotionCard';
 
 interface EmotionResult {
@@ -16,112 +25,73 @@ const FaceEmotionDetection: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [results, setResults] = useState<EmotionResult[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const { toast } = useToast();
+  const [cameraPermission, requestCameraPermission] = Camera.useCameraPermissions();
+  const cameraRef = useRef<Camera>(null);
 
-  // Mock emotion analysis function (replace with actual API call)
-  const analyzeEmotion = async (imageData: string): Promise<EmotionResult[]> => {
+  // Mock emotion analysis function
+  const analyzeEmotion = async (imageUri: string): Promise<EmotionResult[]> => {
     setIsAnalyzing(true);
     
     // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Mock results - replace with actual API call
+    // Mock results
     const mockResults: EmotionResult[] = [
-      { emotion: 'happy', percentage: 65, emoji: '😊', color: 'hsl(var(--emotion-happy))' },
-      { emotion: 'neutral', percentage: 20, emoji: '😐', color: 'hsl(var(--emotion-neutral))' },
-      { emotion: 'surprised', percentage: 10, emoji: '😲', color: 'hsl(var(--emotion-surprised))' },
-      { emotion: 'sad', percentage: 5, emoji: '😢', color: 'hsl(var(--emotion-sad))' }
+      { emotion: 'happy', percentage: 65, emoji: '😊', color: '#FCD34D' },
+      { emotion: 'neutral', percentage: 20, emoji: '😐', color: '#94A3B8' },
+      { emotion: 'surprised', percentage: 10, emoji: '😲', color: '#FB923C' },
+      { emotion: 'sad', percentage: 5, emoji: '😢', color: '#60A5FA' }
     ];
     
     setIsAnalyzing(false);
     return mockResults;
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleImagePicker = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
 
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please select an image file.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const imageData = e.target?.result as string;
-      setSelectedImage(imageData);
+    if (!result.canceled && result.assets[0]) {
+      const imageUri = result.assets[0].uri;
+      setSelectedImage(imageUri);
       
       try {
-        const emotionResults = await analyzeEmotion(imageData);
+        const emotionResults = await analyzeEmotion(imageUri);
         setResults(emotionResults);
       } catch (error) {
-        toast({
-          title: "Analysis failed",
-          description: "Failed to analyze the image. Please try again.",
-          variant: "destructive"
-        });
+        Alert.alert('Error', 'Failed to analyze the image. Please try again.');
       }
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } 
-      });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCameraActive(true);
+    if (!cameraPermission?.granted) {
+      const permission = await requestCameraPermission();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Camera access is needed to take photos.');
+        return;
       }
-    } catch (error) {
-      toast({
-        title: "Camera access denied",
-        description: "Please allow camera access to take photos.",
-        variant: "destructive"
-      });
     }
+    setIsCameraActive(true);
   };
 
-  const capturePhoto = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    if (!ctx) return;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    
-    const imageData = canvas.toDataURL('image/jpeg');
-    setSelectedImage(imageData);
-    
-    // Stop camera
-    const stream = video.srcObject as MediaStream;
-    stream?.getTracks().forEach(track => track.stop());
-    setIsCameraActive(false);
-    
-    try {
-      const emotionResults = await analyzeEmotion(imageData);
-      setResults(emotionResults);
-    } catch (error) {
-      toast({
-        title: "Analysis failed",
-        description: "Failed to analyze the captured image. Please try again.",
-        variant: "destructive"
-      });
+  const takePicture = async () => {
+    if (cameraRef.current) {
+      try {
+        const photo = await cameraRef.current.takePictureAsync();
+        setSelectedImage(photo.uri);
+        setIsCameraActive(false);
+        
+        const emotionResults = await analyzeEmotion(photo.uri);
+        setResults(emotionResults);
+      } catch (error) {
+        Alert.alert('Error', 'Failed to take picture. Please try again.');
+      }
     }
   };
 
@@ -129,102 +99,201 @@ const FaceEmotionDetection: React.FC = () => {
     setSelectedImage(null);
     setResults([]);
     setIsAnalyzing(false);
-    
-    if (isCameraActive && videoRef.current) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream?.getTracks().forEach(track => track.stop());
-      setIsCameraActive(false);
-    }
+    setIsCameraActive(false);
   };
 
+  if (isCameraActive) {
+    return (
+      <View style={styles.cameraContainer}>
+        <Camera
+          ref={cameraRef}
+          style={styles.camera}
+          type={CameraType.front}
+        />
+        <View style={styles.cameraControls}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => setIsCameraActive(false)}
+          >
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
+            <LinearGradient
+              colors={['#8B5CF6', '#A855F7']}
+              style={styles.captureButtonGradient}
+            >
+              <Ionicons name="camera" size={32} color="white" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <Card className="gradient-card shadow-soft p-6">
-        <h2 className="text-xl font-semibold mb-4 text-center">Face Emotion Detection</h2>
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Face Emotion Detection</Text>
         
-        {!selectedImage && !isCameraActive && (
-          <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Button 
-                variant="emotion" 
-                size="xl" 
-                onClick={startCamera}
-                className="h-20"
+        {!selectedImage ? (
+          <View style={styles.actionContainer}>
+            <TouchableOpacity style={styles.actionButton} onPress={startCamera}>
+              <LinearGradient
+                colors={['#8B5CF6', '#A855F7']}
+                style={styles.actionButtonGradient}
               >
-                <Camera className="w-6 h-6 mr-2" />
-                Take Photo
-              </Button>
-              
-              <Button 
-                variant="soft" 
-                size="xl"
-                onClick={() => fileInputRef.current?.click()}
-                className="h-20"
-              >
-                <Upload className="w-6 h-6 mr-2" />
-                Upload Image
-              </Button>
-            </div>
+                <Ionicons name="camera" size={24} color="white" />
+                <Text style={styles.actionButtonText}>Take Photo</Text>
+              </LinearGradient>
+            </TouchableOpacity>
             
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </div>
+            <TouchableOpacity style={styles.actionButton} onPress={handleImagePicker}>
+              <View style={styles.softButton}>
+                <Ionicons name="image" size={24} color="#8B5CF6" />
+                <Text style={styles.softButtonText}>Upload Image</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.imageContainer}>
+            <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+            <TouchableOpacity style={styles.resetButton} onPress={reset}>
+              <Ionicons name="refresh" size={20} color="#8B5CF6" />
+              <Text style={styles.resetButtonText}>Try Another</Text>
+            </TouchableOpacity>
+          </View>
         )}
-
-        {isCameraActive && (
-          <div className="space-y-4">
-            <div className="relative rounded-lg overflow-hidden">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className="w-full max-w-md mx-auto block"
-              />
-            </div>
-            <div className="flex gap-4 justify-center">
-              <Button variant="emotion" onClick={capturePhoto}>
-                Capture Photo
-              </Button>
-              <Button variant="outline" onClick={reset}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {selectedImage && !isCameraActive && (
-          <div className="space-y-4">
-            <div className="relative rounded-lg overflow-hidden max-w-md mx-auto">
-              <img 
-                src={selectedImage} 
-                alt="Selected for analysis" 
-                className="w-full h-auto"
-              />
-            </div>
-            <div className="flex justify-center">
-              <Button variant="outline" onClick={reset}>
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Try Another
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <canvas ref={canvasRef} className="hidden" />
-      </Card>
+      </View>
 
       <EmotionCard 
         results={results} 
         title="Face Emotion Analysis" 
         isLoading={isAnalyzing}
       />
-    </div>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  cameraContainer: {
+    flex: 1,
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraControls: {
+    position: 'absolute',
+    bottom: 50,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  captureButton: {
+    borderRadius: 40,
+    overflow: 'hidden',
+  },
+  captureButtonGradient: {
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 24,
+    margin: 20,
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 24,
+    color: '#1E293B',
+  },
+  actionContainer: {
+    gap: 16,
+  },
+  actionButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  actionButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  actionButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  softButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+    borderRadius: 16,
+    gap: 8,
+  },
+  softButtonText: {
+    color: '#8B5CF6',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  imageContainer: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  selectedImage: {
+    width: 300,
+    height: 225,
+    borderRadius: 12,
+    resizeMode: 'cover',
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  resetButtonText: {
+    color: '#8B5CF6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 export default FaceEmotionDetection;
