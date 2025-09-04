@@ -26,6 +26,7 @@ const FaceEmotionDetection: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [results, setResults] = useState<EmotionResult[]>([]);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [showOptions, setShowOptions] = useState(true);
   const [cameraPermission, requestCameraPermission] = Camera.useCameraPermissions();
   const cameraRef = useRef<Camera>(null);
 
@@ -36,12 +37,12 @@ const FaceEmotionDetection: React.FC = () => {
     // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Mock results
+    // Mock results with more varied emotions
     const mockResults: EmotionResult[] = [
-      { emotion: 'happy', percentage: 65, emoji: '😊', color: '#FCD34D' },
+      { emotion: 'happy', percentage: 65, emoji: '😊', color: '#10B981' },
       { emotion: 'neutral', percentage: 20, emoji: '😐', color: '#94A3B8' },
-      { emotion: 'surprised', percentage: 10, emoji: '😲', color: '#FB923C' },
-      { emotion: 'sad', percentage: 5, emoji: '😢', color: '#60A5FA' }
+      { emotion: 'surprised', percentage: 10, emoji: '😲', color: '#F59E0B' },
+      { emotion: 'sad', percentage: 5, emoji: '😢', color: '#3B82F6' }
     ];
     
     setIsAnalyzing(false);
@@ -49,23 +50,24 @@ const FaceEmotionDetection: React.FC = () => {
   };
 
   const handleImagePicker = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
 
-    if (!result.canceled && result.assets[0]) {
-      const imageUri = result.assets[0].uri;
-      setSelectedImage(imageUri);
-      
-      try {
+      if (!result.canceled && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        setSelectedImage(imageUri);
+        setShowOptions(false);
+        
         const emotionResults = await analyzeEmotion(imageUri);
         setResults(emotionResults);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to analyze the image. Please try again.');
       }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
 
@@ -78,6 +80,7 @@ const FaceEmotionDetection: React.FC = () => {
       }
     }
     setIsCameraActive(true);
+    setShowOptions(false);
   };
 
   const takePicture = async () => {
@@ -100,6 +103,7 @@ const FaceEmotionDetection: React.FC = () => {
     setResults([]);
     setIsAnalyzing(false);
     setIsCameraActive(false);
+    setShowOptions(true);
   };
 
   if (isCameraActive) {
@@ -113,8 +117,12 @@ const FaceEmotionDetection: React.FC = () => {
         <View style={styles.cameraControls}>
           <TouchableOpacity
             style={styles.cancelButton}
-            onPress={() => setIsCameraActive(false)}
+            onPress={() => {
+              setIsCameraActive(false);
+              setShowOptions(true);
+            }}
           >
+            <Ionicons name="close" size={24} color="white" />
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
@@ -134,33 +142,50 @@ const FaceEmotionDetection: React.FC = () => {
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Face Emotion Detection</Text>
+        <Text style={styles.cardSubtitle}>
+          Choose how you'd like to analyze facial emotions
+        </Text>
         
-        {!selectedImage ? (
-          <View style={styles.actionContainer}>
-            <TouchableOpacity style={styles.actionButton} onPress={startCamera}>
+        {showOptions ? (
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity style={styles.optionButton} onPress={startCamera}>
               <LinearGradient
                 colors={['#8B5CF6', '#A855F7']}
-                style={styles.actionButtonGradient}
+                style={styles.optionButtonGradient}
               >
-                <Ionicons name="camera" size={24} color="white" />
-                <Text style={styles.actionButtonText}>Take Photo</Text>
+                <View style={styles.optionIconContainer}>
+                  <Ionicons name="camera" size={32} color="white" />
+                </View>
+                <Text style={styles.optionTitle}>Take Photo</Text>
+                <Text style={styles.optionDescription}>
+                  Use your camera to capture a photo for emotion analysis
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.actionButton} onPress={handleImagePicker}>
-              <View style={styles.softButton}>
-                <Ionicons name="image" size={24} color="#8B5CF6" />
-                <Text style={styles.softButtonText}>Upload Image</Text>
+            <TouchableOpacity style={styles.optionButton} onPress={handleImagePicker}>
+              <View style={styles.optionButtonSecondary}>
+                <View style={styles.optionIconContainerSecondary}>
+                  <Ionicons name="image" size={32} color="#8B5CF6" />
+                </View>
+                <Text style={styles.optionTitleSecondary}>Upload from Gallery</Text>
+                <Text style={styles.optionDescriptionSecondary}>
+                  Select an existing photo from your device gallery
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.imageContainer}>
-            <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
-            <TouchableOpacity style={styles.resetButton} onPress={reset}>
-              <Ionicons name="refresh" size={20} color="#8B5CF6" />
-              <Text style={styles.resetButtonText}>Try Another</Text>
-            </TouchableOpacity>
+            {selectedImage && (
+              <>
+                <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+                <TouchableOpacity style={styles.resetButton} onPress={reset}>
+                  <Ionicons name="refresh" size={20} color="#8B5CF6" />
+                  <Text style={styles.resetButtonText}>Try Another</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -195,10 +220,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   cancelButton: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   cancelButtonText: {
     color: 'white',
@@ -227,46 +255,79 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 8,
     color: '#1E293B',
   },
-  actionContainer: {
-    gap: 16,
+  cardSubtitle: {
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
   },
-  actionButton: {
+  optionsContainer: {
+    gap: 20,
+  },
+  optionButton: {
     borderRadius: 16,
     overflow: 'hidden',
   },
-  actionButtonGradient: {
-    flexDirection: 'row',
+  optionButtonGradient: {
+    padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    gap: 8,
   },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  softButton: {
-    flexDirection: 'row',
+  optionButtonSecondary: {
+    padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(139, 92, 246, 0.3)',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
     borderRadius: 16,
-    gap: 8,
   },
-  softButtonText: {
-    color: '#8B5CF6',
-    fontSize: 18,
-    fontWeight: '600',
+  optionIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  optionIconContainerSecondary: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  optionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
+  },
+  optionTitleSecondary: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  optionDescription: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  optionDescriptionSecondary: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   imageContainer: {
     alignItems: 'center',
